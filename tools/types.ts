@@ -36,6 +36,14 @@ export interface GSheetsUpdateCellInput {
   value: string;
 }
 
+export interface GSheetsUpdateCellBatchInput {
+  fileId: string;
+  updates: {
+    range: string;
+    value: string;
+  }[];
+}
+
 export interface GSheetsReadInput {
   spreadsheetId: string;
   ranges?: string[]; // Optional A1 notation ranges like "Sheet1!A1:B10"

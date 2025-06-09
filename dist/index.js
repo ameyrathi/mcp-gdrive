@@ -12,8 +12,8 @@ const server = new Server({
 }, {
     capabilities: {
         resources: {
-            schemes: ["gdrive"], // Declare that we handle gdrive:/// URIs
-            listable: true, // Support listing available resources
+            schemes: ["gdrive"],
+            listable: true,
             readable: true, // Support reading resource contents
         },
         tools: {},
@@ -64,7 +64,7 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
         contents: [
             {
                 uri: request.params.uri,
-                mimeType: "text/plain", // You might want to determine this dynamically
+                mimeType: "text/plain",
                 text: fileContents,
             },
         ],
@@ -98,7 +98,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 async function startServer() {
     try {
-        console.log("Starting server");
+        console.error("Starting server");
+        // Add this line to force authentication at startup
+        await ensureAuth(); // This will trigger the auth flow if no valid credentials exist
         const transport = new StdioServerTransport();
         await server.connect(transport);
         // Set up periodic token refresh that never prompts for auth

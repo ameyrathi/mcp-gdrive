@@ -59,39 +59,25 @@ async function authenticateAndSaveCredentials() {
   console.error("Using keyfile path:", keyfilePath);
 
   const auth = await authenticateWithTimeout(keyfilePath, SCOPES);
-  if (auth) {
-    const newAuth = new google.auth.OAuth2();
-    newAuth.setCredentials(auth.credentials);
+  if (!auth) {
+    throw new Error("Authentication failed");
   }
 
-  try {
-    const { credentials } = await auth.refreshAccessToken();
-    console.error("Received new credentials with scopes:", credentials.scope);
+  console.error("Authentication successful, saving credentials...");
+  
+  // Ensure directory exists before saving
+  ensureCredsDirectory();
 
-    // Ensure directory exists before saving
-    ensureCredsDirectory();
-
-    fs.writeFileSync(credentialsPath, JSON.stringify(credentials, null, 2));
-    console.error(
-      "Credentials saved successfully with refresh token to:",
-      credentialsPath,
-    );
-    auth.setCredentials(credentials);
-    return auth;
-  } catch (error) {
-    console.error("Error refreshing token during initial auth:", error);
-    return auth;
-  }
+  // Save the credentials directly from the auth object
+  fs.writeFileSync(credentialsPath, JSON.stringify(auth.credentials, null, 2));
+  console.error("Credentials saved successfully to:", credentialsPath);
+  
+  return auth;
 }
 
 // Try to load credentials without prompting for auth
 export async function loadCredentialsQuietly() {
   console.error("Attempting to load credentials from:", credentialsPath);
-
-  const oauth2Client = new google.auth.OAuth2(
-    process.env.CLIENT_ID,
-    process.env.CLIENT_SECRET,
-  );
 
   if (!fs.existsSync(credentialsPath)) {
     console.error("No credentials file found");
@@ -100,29 +86,30 @@ export async function loadCredentialsQuietly() {
 
   try {
     const savedCreds = JSON.parse(fs.readFileSync(credentialsPath, "utf-8"));
-    console.error("Loaded existing credentials with scopes:", savedCreds.scope);
+    console.error("Loaded existing credentials");
+
+    const oauth2Client = new google.auth.OAuth2(
+      savedCreds.client_id,
+      savedCreds.client_secret,
+      savedCreds.redirect_uris?.[0]
+    );
+    
     oauth2Client.setCredentials(savedCreds);
 
-    const expiryDate = new Date(savedCreds.expiry_date);
-    const now = new Date();
-    const fiveMinutes = 5 * 60 * 1000;
-    const timeToExpiry = expiryDate.getTime() - now.getTime();
-
-    console.error("Token expiry status:", {
-      expiryDate: expiryDate.toISOString(),
-      timeToExpiryMinutes: Math.floor(timeToExpiry / (60 * 1000)),
-      hasRefreshToken: !!savedCreds.refresh_token,
-    });
-
-    if (timeToExpiry < fiveMinutes && savedCreds.refresh_token) {
-      console.error("Attempting to refresh token using refresh_token");
+    // Check if token needs refresh
+    const now = Date.now();
+    const expiryTime = savedCreds.expiry_date || 0;
+    
+    if (expiryTime - now < 5 * 60 * 1000 && savedCreds.refresh_token) {
+      console.error("Token expires soon, refreshing...");
       try {
-        const response = await oauth2Client.refreshAccessToken();
-        const newCreds = response.credentials;
+        const { credentials } = await oauth2Client.refreshAccessToken();
+        console.error("Token refreshed successfully");
+        
+        // Save the refreshed credentials
         ensureCredsDirectory();
-        fs.writeFileSync(credentialsPath, JSON.stringify(newCreds, null, 2));
-        oauth2Client.setCredentials(newCreds);
-        console.error("Token refreshed and saved successfully");
+        fs.writeFileSync(credentialsPath, JSON.stringify(credentials, null, 2));
+        oauth2Client.setCredentials(credentials);
       } catch (error) {
         console.error("Failed to refresh token:", error);
         return null;
@@ -157,8 +144,7 @@ export function setupTokenRefresh() {
         console.error("Running scheduled token refresh check");
         const auth = await loadCredentialsQuietly();
         if (auth) {
-          google.options({ auth });
-          console.error("Completed scheduled token refresh");
+          console.error("Completed scheduled token refresh check");
         } else {
           console.error("Skipping token refresh - no valid credentials");
         }
